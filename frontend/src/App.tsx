@@ -2,6 +2,9 @@ import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
+import { toast } from 'sonner'
+import axios from 'axios'
+import type { AxiosProgressEvent } from 'axios'
 
 // components
 import { Button } from '@/components/ui/button'
@@ -17,6 +20,7 @@ import {
 import { Input } from '@/components/ui/input'
 
 // api
+import getS3PutUrl from '@/api/getS3PutUrl'
 import getS3SignedUrl from '@/api/getS3SignedUrl'
 
 const ACCEPTED_TYPES = ['image/jpeg', 'image/png'] as const
@@ -35,14 +39,15 @@ type FormValues = z.infer<typeof formSchema>
 const App = () => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [uploadProgress, setUploadProgress] = useState<number | null>(null)
+  const [uploadedUrl, setUploadedUrl] = useState<string | null>(null)
+
+  console.log(uploadedUrl)
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
   })
 
   const onSubmit = async (values: FormValues) => {
-    setUploadProgress(0)
-
     const file = values.profileImage as File;
 
     const data = {
@@ -55,9 +60,55 @@ const App = () => {
       signedLink,
       mimeType,
       uniqueKeyName,
-    } = await getS3SignedUrl(data)
+    } = await getS3PutUrl(data).catch(() => {
+      toast.error('Failed to get signed URL', { position: 'top-center' })
+      return null
+    })
 
-    console.log(signedLink, mimeType, uniqueKeyName)
+    if (!signedLink || !mimeType || !uniqueKeyName) {
+      toast.error('Failed to get signed URL', { position: 'top-center' })
+      return
+    }
+
+    setUploadProgress(0)
+
+    try {
+      const config = {
+        headers: {
+          'Content-Type': mimeType,
+        },
+        onUploadProgress: (progressEvent: AxiosProgressEvent) => setUploadProgress(progressEvent.progress * 100),
+      }
+
+      const awsResp = await axios.put(signedLink, file, config).catch((error) => {
+        toast.error('Failed to upload file', { position: 'top-center' })
+        console.error(error)
+        return null
+      })
+
+      setUploadProgress(null);
+
+      if (awsResp.status !== 200) {
+        toast.error('Failed to upload file', { position: 'top-center' })
+        console.error(awsResp)
+        return
+      }
+
+      const signedUrlResp = await getS3SignedUrl({ key: uniqueKeyName }).catch((error) => {
+        toast.error('Failed to finalize upload', { position: 'top-center' })
+        console.error(error)
+        return null
+      })
+
+      setUploadedUrl(signedUrlResp.signedUrl)
+
+      toast.success('File uploaded successfully', { position: 'top-center' })
+
+    } catch (error) {
+      toast.error('Failed to upload file', { position: 'top-center' })
+      console.error(error)
+    }
+
   }
 
   function handleCancel() {
@@ -141,6 +192,12 @@ const App = () => {
                 style={{ width: `${uploadProgress}%` }}
               />
             </div>
+          </div>
+        )}
+
+        {uploadedUrl && (
+          <div id="uploaded-image">
+            <img src={uploadedUrl} alt="Uploaded image" className="mx-auto max-h-48 rounded-md object-contain" />
           </div>
         )}
       </div>
