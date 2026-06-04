@@ -1,122 +1,151 @@
 import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import './App.css'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
 
-function App() {
-  const [count, setCount] = useState(0)
+// components
+import { Button } from '@/components/ui/button'
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form'
+import { Input } from '@/components/ui/input'
+
+// api
+import getS3SignedUrl from '@/api/getS3SignedUrl'
+
+const ACCEPTED_TYPES = ['image/jpeg', 'image/png'] as const
+
+const formSchema = z.object({
+  profileImage: z
+    .instanceof(File, { message: 'Please select an image' })
+    .refine(
+      (file) => ACCEPTED_TYPES.includes(file.type as (typeof ACCEPTED_TYPES)[number]),
+      'Only .jpg and .png files are accepted',
+    ),
+})
+
+type FormValues = z.infer<typeof formSchema>
+
+const App = () => {
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null)
+
+  const form = useForm<FormValues>({
+    resolver: zodResolver(formSchema),
+  })
+
+  const onSubmit = async (values: FormValues) => {
+    setUploadProgress(0)
+
+    const file = values.profileImage as File;
+
+    const data = {
+      fileName: file.name,
+      fileSize: file.size,
+      fileType: file.type,
+    }
+
+    const {
+      signedLink,
+      mimeType,
+      uniqueKeyName,
+    } = await getS3SignedUrl(data)
+
+    console.log(signedLink, mimeType, uniqueKeyName)
+  }
+
+  function handleCancel() {
+    form.reset()
+    setPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev)
+      return null
+    })
+    setUploadProgress(null)
+  }
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
+    <div className="container mx-auto max-w-lg px-4">
+      <div className="mt-3 space-y-4">
+        <div id="current-image">
+          {previewUrl && (
+            <img
+              src={previewUrl}
+              alt="Selected preview"
+              className="mx-auto max-h-48 rounded-md object-contain"
+            />
+          )}
         </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
 
-      <div className="ticks"></div>
+        <Form {...form}>
+          <form
+            id="file-form"
+            onSubmit={form.handleSubmit(onSubmit)}
+            className="space-y-4 rounded-lg border p-4 text-left"
+          >
+            <FormField
+              control={form.control}
+              name="profileImage"
+              render={({ field: { onChange, onBlur, name, ref } }) => (
+                <FormItem>
+                  <FormLabel htmlFor="profile-image">Profile image</FormLabel>
+                  <FormControl>
+                    <Input
+                      id="profile-image"
+                      type="file"
+                      accept="image/png, image/jpeg"
+                      name={name}
+                      ref={ref}
+                      onBlur={onBlur}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        onChange(file)
+                        setPreviewUrl((prev) => {
+                          if (prev) URL.revokeObjectURL(prev)
+                          return file ? URL.createObjectURL(file) : null
+                        })
+                      }}
+                    />
+                  </FormControl>
+                  <FormDescription>Accepts: .jpg, .png</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+            <div className="flex gap-2">
+              <Button type="submit">Continue</Button>
+              <Button type="button" variant="destructive" onClick={handleCancel}>
+                Cancel
+              </Button>
+            </div>
+          </form>
+        </Form>
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+        {uploadProgress !== null && (
+          <div id="progress-wrapper" className="space-y-2">
+            <div
+              className="h-2 w-full overflow-hidden rounded-full bg-secondary"
+              role="progressbar"
+              aria-valuenow={uploadProgress}
+              aria-valuemin={0}
+              aria-valuemax={100}
+            >
+              <div
+                className="h-full bg-primary transition-all duration-300"
+                style={{ width: `${uploadProgress}%` }}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   )
-}
+};
 
-export default App
+export default App;
